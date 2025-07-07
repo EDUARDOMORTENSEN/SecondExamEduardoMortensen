@@ -4,13 +4,14 @@ const InvoiceSchema = new mongoose.Schema({
   _id: String, // Manual ID
   customer: String,
   products: [{
-    productId: String, // Si también los productos usan IDs manuales
+    productId: String, // ID del producto manual
     quantity: Number
   }],
   total: Number,
   date: { type: Date, default: Date.now }
-}, { _id: false });
+});
 
+// Virtual para mostrar id (opcional, ya que usamos _id manual)
 InvoiceSchema.virtual('id').get(function () {
   return this._id;
 });
@@ -18,3 +19,4 @@ InvoiceSchema.virtual('id').get(function () {
 InvoiceSchema.set('toJSON', { virtuals: true });
 
 module.exports = mongoose.model('Invoice', InvoiceSchema);
+
