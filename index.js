@@ -47,31 +47,96 @@ app.delete('/products/:id', async (req, res) => {
 
 // === INVOICE ROUTES ===
 
+// === INVOICE ROUTES ===
+
 // Create a new invoice
 app.post('/invoices', async (req, res) => {
-  const { customer, products } = req.body;
-  let total = 0;
+  try {
+    const { _id, customer, products } = req.body;
 
-  for (const item of products) {
-    const product = await Product.findById(item.productId);
-    if (!product || product.stock < item.quantity) {
-      return res.status(400).json({ message: 'Product unavailable or insufficient stock' });
+    if (!_id) {
+      return res.status(400).json({ message: 'Invoice _id is required' });
     }
-    total += product.price * item.quantity;
-    product.stock -= item.quantity;
-    await product.save();
-  }
 
-  const invoice = new Invoice({ customer, products, total });
-  await invoice.save();
-  res.json(invoice);
+    let total = 0;
+
+    for (const item of products) {
+      const product = await Product.findById(item.productId);
+      if (!product) {
+        return res.status(400).json({ message: `Product with ID ${item.productId} not found` });
+      }
+      if (product.stock < item.quantity) {
+        return res.status(400).json({ message: `Insufficient stock for product ID ${item.productId}` });
+      }
+      total += product.price * item.quantity;
+    }
+
+    for (const item of products) {
+      await Product.findByIdAndUpdate(item.productId, { $inc: { stock: -item.quantity } });
+    }
+
+    const invoice = new Invoice({ _id, customer, products, total });
+    await invoice.save();
+    res.status(201).json(invoice);
+
+  } catch (error) {
+    res.status(500).json({ message: 'Error creating invoice', error: error.message });
+  }
 });
 
-// Get invoice total by ID (recalculate from products)
+// Get all invoices
+app.get('/invoices', async (req, res) => {
+  try {
+    const invoices = await Invoice.find();
+    res.json(invoices);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching invoices', error: error.message });
+  }
+});
+
+// Get one invoice by ID
+app.get('/invoices/:id', async (req, res) => {
+  try {
+    const invoice = await Invoice.findById(req.params.id);
+    if (!invoice) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+    res.json(invoice);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching invoice', error: error.message });
+  }
+});
+
+// Update invoice (without recalculating total or stock)
+app.put('/invoices/:id', async (req, res) => {
+  try {
+    const updatedInvoice = await Invoice.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!updatedInvoice) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+    res.json(updatedInvoice);
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating invoice', error: error.message });
+  }
+});
+
+// Delete invoice
+app.delete('/invoices/:id', async (req, res) => {
+  try {
+    const deleted = await Invoice.findByIdAndDelete(req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+    res.json({ message: 'Invoice deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting invoice', error: error.message });
+  }
+});
+
+// Get invoice total by ID (recalculate from current product prices)
 app.get('/invoices/:id/total', async (req, res) => {
   try {
     const invoice = await Invoice.findById(req.params.id);
-
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
@@ -81,7 +146,7 @@ app.get('/invoices/:id/total', async (req, res) => {
     for (const item of invoice.products) {
       const product = await Product.findById(item.productId);
       if (!product) {
-        return res.status(400).json({ message: `Product with ID ${item.productId} not found` });
+        return res.status(400).json({ message: `Product ID ${item.productId} not found` });
       }
       total += product.price * item.quantity;
     }
@@ -91,10 +156,12 @@ app.get('/invoices/:id/total', async (req, res) => {
       customer: invoice.customer,
       calculatedTotal: total
     });
+
   } catch (error) {
-    res.status(500).json({ message: 'Error calculating total', error });
+    res.status(500).json({ message: 'Error calculating invoice total', error: error.message });
   }
 });
+
 
 // Start server
 app.listen(PORT, () => {
